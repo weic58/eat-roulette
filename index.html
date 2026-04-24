@@ -260,6 +260,91 @@
     }
     .result-box strong { color: var(--main); font-size: 28px; }
 
+    .filter-panel {
+      width: min(520px, 100%);
+      margin: 0 auto 14px;
+      padding: 12px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(255,122,24,.18);
+      border-radius: 20px;
+      text-align: left;
+    }
+    .filter-title { font-weight: 950; margin-bottom: 8px; color: #7c4a2e; }
+    .filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .filter-chip {
+      border: 1px solid rgba(255,122,24,.22);
+      background: white;
+      color: #7c4a2e;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .filter-chip.active { background: #2b1b12; color: white; }
+    .filter-note { color: var(--muted); font-size: 13px; font-weight: 750; }
+    .item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #fff7ed;
+      color: #8c4b22;
+      border: 1px solid rgba(255,122,24,.16);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .setting-grid {
+      display: grid;
+      grid-template-columns: 1fr 120px 100px auto;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .setting-grid input, .setting-grid select {
+      min-width: 0;
+      border: 1px solid rgba(255,122,24,.25);
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-size: 16px;
+      outline: none;
+      background: white;
+    }
+    @media (max-width: 680px) { .setting-grid { grid-template-columns: 1fr; } }
+
+
+    .csv-tools { padding: 18px; margin-bottom: 16px; }
+    .csv-tools h2 { margin: 0 0 8px; font-size: 22px; }
+    .csv-tools p { margin: 0 0 12px; color: var(--muted); font-weight: 750; line-height: 1.6; }
+    .csv-grid {
+      display: grid;
+      grid-template-columns: 160px 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .csv-grid select, .csv-grid input[type="file"] {
+      min-width: 0;
+      border: 1px solid rgba(255,122,24,.25);
+      border-radius: 16px;
+      padding: 10px 12px;
+      font-size: 15px;
+      outline: none;
+      background: white;
+      font-weight: 800;
+    }
+    .csv-grid input[type="file"] { color: #7c4a2e; }
+    .csv-template {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: #fff7ed;
+      color: #8c4b22;
+      border: 1px solid rgba(255,122,24,.14);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.6;
+    }
+    @media (max-width: 760px) { .csv-grid { grid-template-columns: 1fr; } }
+
     .side-panel { padding: 18px; }
     .side-panel h3 { margin: 0 0 10px; font-size: 20px; }
     .chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -386,6 +471,7 @@
 
       <div class="wheel-layout">
         <div class="panel wheel-panel">
+          <div id="restaurantFilters" class="filter-panel" style="display:none;"></div>
           <div class="wheel-wrap">
             <div class="pointer"></div>
             <canvas id="wheelCanvas" width="900" height="900"></canvas>
@@ -409,6 +495,22 @@
         <button class="btn back-btn" onclick="resetDefaultData()">重設</button>
       </div>
 
+      <div class="panel csv-tools">
+        <h2>📥 CSV 匯入 / 匯出</h2>
+        <p>先選擇要管理的資料類別，再匯入或匯出 CSV。匯出的檔案會自動加入 UTF-8 BOM，Excel 開啟中文比較不會亂碼。</p>
+        <div class="csv-grid">
+          <select id="csvCategory" onchange="updateCsvHint()">
+            <option value="cuisine">料理種類</option>
+            <option value="restaurant">餐廳</option>
+            <option value="item">品項</option>
+          </select>
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <button class="btn small-btn" onclick="importCSV()">匯入 CSV</button>
+          <button class="btn small-btn" onclick="exportCSV()">匯出 CSV</button>
+        </div>
+        <div id="csvHint" class="csv-template"></div>
+      </div>
+
       <div id="settingsContainer"></div>
     </section>
   </main>
@@ -416,7 +518,7 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    const STORE_KEY = 'eatRouletteData.v1';
+    const STORE_KEY = 'eatRouletteData.v2';
 
     const modeInfo = {
       cuisine: { title: '料理種類', icon: '🍝', label: '料理種類' },
@@ -424,11 +526,66 @@
       item: { title: '隨機品項', icon: '🍜', label: '品項' }
     };
 
+    const defaultRestaurants = [
+      { name: '丸龜', type: '餐廳', price: '$' },
+      { name: '誠記', type: '餐廳', price: '$$' },
+      { name: '錢都', type: '餐廳', price: '$$' },
+      { name: '旭集', type: '餐廳', price: '$$$' },
+      { name: 'P&P Pasta', type: '餐廳', price: '$$' },
+      { name: '糖葫蘆', type: '甜點店', price: '$' },
+      { name: '炸魷魚', type: '餐廳', price: '$' },
+      { name: '鴨血臭豆腐', type: '餐廳', price: '$' },
+      { name: '蜜汁燒烤', type: '餐廳', price: '$' },
+      { name: '章魚燒', type: '餐廳', price: '$' },
+      { name: '拉麵', type: '餐廳', price: '$$' },
+      { name: '薩利亞', type: '餐廳', price: '$' },
+      { name: '壽司郎', type: '餐廳', price: '$$' },
+      { name: '享冰雪花冰', type: '甜點店', price: '$' },
+      { name: 'coldstone', type: '甜點店', price: '$$' },
+      { name: '鶴茶樓', type: '飲料店', price: '$' },
+      { name: '鬼太郎之謎', type: '餐廳', price: '$$' },
+      { name: '潮肉壽喜燒', type: '餐廳', price: '$$$' },
+      { name: '陶板屋', type: '餐廳', price: '$$$' },
+      { name: 'Root Kitchen 美式廚房', type: '餐廳', price: '$$' },
+      { name: '小木屋鬆餅', type: '甜點店', price: '$' },
+      { name: '東京廚房-景美', type: '餐廳', price: '$$' },
+      { name: 'ikea', type: '餐廳', price: '$' },
+      { name: '天仁茗茶', type: '飲料店', price: '$' },
+      { name: '星巴克', type: '咖啡廳', price: '$$' },
+      { name: '麵匡匡', type: '餐廳', price: '$' },
+      { name: '九鬼漁屋', type: '餐廳', price: '$$' },
+      { name: '勝博殿', type: '餐廳', price: '$$$' },
+      { name: 'RICO', type: '餐廳', price: '$$' },
+      { name: '石二鍋', type: '餐廳', price: '$$' },
+      { name: '綠薄荷', type: '餐廳', price: '$$' },
+      { name: '薩莉亞', type: '餐廳', price: '$' },
+      { name: '銷魂麵舖', type: '餐廳', price: '$$' },
+      { name: '誠記河粉', type: '餐廳', price: '$$' },
+      { name: '享冰室', type: '甜點店', price: '$' },
+      { name: '豆腐村', type: '餐廳', price: '$$' },
+      { name: '墨洋拉麵', type: '餐廳', price: '$$' },
+      { name: '五桐號', type: '飲料店', price: '$' },
+      { name: '爭鮮', type: '餐廳', price: '$' },
+      { name: '好泰多', type: '餐廳', price: '$$' },
+      { name: 'magic touch', type: '餐廳', price: '$$' },
+      { name: '貳樓', type: '餐廳', price: '$$$' },
+      { name: '麻膳堂', type: '餐廳', price: '$$' },
+      { name: '晴喜摘', type: '飲料店', price: '$' },
+      { name: 'wakuwaku pasta', type: '餐廳', price: '$$' },
+      { name: '花月嵐', type: '餐廳', price: '$$' },
+      { name: '博多天婦羅', type: '餐廳', price: '$$' },
+      { name: '龜記', type: '飲料店', price: '$' }
+    ];
+
     const defaultData = {
       cuisine: ['義式料理', '日式料理', '美式料理', '韓式料理', '台式料理', '港式料理', '泰式料理', '火鍋'],
-      restaurant: ['麥當勞', '摩斯漢堡', '八方雲集', '爭鮮', '壽司郎', '三商巧福', '附近便當店', '巷口麵店'],
-      item: ['拉麵', '牛肉麵', '滷肉飯', '咖哩飯', '壽司', '披薩', '漢堡', '鹽酥雞', '火鍋', '水餃']
+      restaurant: defaultRestaurants,
+      item: ['拉麵', '義大利麵', '壽司', '河粉', '雪花冰', '鬆餅', '鍋物', '天婦羅', '手搖飲', '咖啡']
     };
+
+    const restaurantTypes = ['全部', '飲料店', '甜點店', '咖啡廳', '餐廳'];
+    const priceLevels = ['全部', '$', '$$', '$$$'];
+    let restaurantFilter = { type: '全部', price: '全部' };
 
     let data = loadData();
     let currentMode = 'cuisine';
@@ -437,13 +594,22 @@
 
     const colors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c', '#52b788', '#f72585', '#4cc9f0', '#b5179e', '#f77f00', '#43aa8b'];
 
+    function normalizeRestaurant(item) {
+      if (typeof item === 'string') return { name: item, type: '餐廳', price: '$$' };
+      return {
+        name: item.name || item.title || '未命名',
+        type: restaurantTypes.includes(item.type) && item.type !== '全部' ? item.type : '餐廳',
+        price: priceLevels.includes(item.price) && item.price !== '全部' ? item.price : '$$'
+      };
+    }
+
     function loadData() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORE_KEY));
         if (!saved) return structuredClone(defaultData);
         return {
           cuisine: Array.isArray(saved.cuisine) ? saved.cuisine : [...defaultData.cuisine],
-          restaurant: Array.isArray(saved.restaurant) ? saved.restaurant : [...defaultData.restaurant],
+          restaurant: Array.isArray(saved.restaurant) ? saved.restaurant.map(normalizeRestaurant) : structuredClone(defaultRestaurants),
           item: Array.isArray(saved.item) ? saved.item : [...defaultData.item]
         };
       } catch (e) {
@@ -458,7 +624,7 @@
     function navigate(view) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById(`view-${view}`).classList.add('active');
-      if (view === 'settings') renderSettings();
+      if (view === 'settings') { renderSettings(); updateCsvHint(); }
       if (view === 'wheel') renderWheelPage();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -472,27 +638,70 @@
       navigate('wheel');
     }
 
+    function getCurrentItems() {
+      if (currentMode !== 'restaurant') return data[currentMode];
+      return data.restaurant.filter(item => {
+        const typeOk = restaurantFilter.type === '全部' || item.type === restaurantFilter.type;
+        const priceOk = restaurantFilter.price === '全部' || item.price === restaurantFilter.price;
+        return typeOk && priceOk;
+      });
+    }
+
+    function getItemName(item) {
+      return typeof item === 'string' ? item : item.name;
+    }
+
     function renderWheelPage() {
       const info = modeInfo[currentMode];
       document.getElementById('wheelTitle').textContent = `${info.icon} ${info.title}`;
+      renderRestaurantFilters();
       renderChips();
       drawWheel();
     }
 
-    function renderChips() {
-      const chips = document.getElementById('optionChips');
-      const items = data[currentMode];
-      if (!items.length) {
-        chips.innerHTML = `<div class="empty">目前沒有選項，請到設定新增。</div>`;
+    function renderRestaurantFilters() {
+      const box = document.getElementById('restaurantFilters');
+      if (currentMode !== 'restaurant') {
+        box.style.display = 'none';
+        box.innerHTML = '';
         return;
       }
-      chips.innerHTML = items.map(item => `<span class="chip">${escapeHtml(item)}</span>`).join('');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div class="filter-title">🔎 篩選餐廳</div>
+        <div class="filter-row">
+          ${restaurantTypes.map(t => `<button class="filter-chip ${restaurantFilter.type === t ? 'active' : ''}" onclick="setRestaurantFilter('type', '${t}')">${t}</button>`).join('')}
+        </div>
+        <div class="filter-row">
+          ${priceLevels.map(p => `<button class="filter-chip ${restaurantFilter.price === p ? 'active' : ''}" onclick="setRestaurantFilter('price', '${p}')">${p === '全部' ? '全部價位' : p}</button>`).join('')}
+        </div>
+        <div class="filter-note">$ 平價｜$$ 中價位｜$$$ 較高價位；非餐廳類也可用價位一起篩選。</div>
+      `;
+    }
+
+    function setRestaurantFilter(kind, value) {
+      restaurantFilter[kind] = value;
+      document.getElementById('resultBox').innerHTML = '按下按鈕，讓轉盤幫你選。';
+      renderWheelPage();
+    }
+
+    function renderChips() {
+      const chips = document.getElementById('optionChips');
+      const items = getCurrentItems();
+      if (!items.length) {
+        chips.innerHTML = `<div class="empty">目前沒有符合篩選的選項，請調整篩選或到設定新增。</div>`;
+        return;
+      }
+      chips.innerHTML = items.map(item => {
+        if (currentMode === 'restaurant') return `<span class="chip">${escapeHtml(item.name)}｜${escapeHtml(item.type)}｜${escapeHtml(item.price)}</span>`;
+        return `<span class="chip">${escapeHtml(item)}</span>`;
+      }).join('');
     }
 
     function drawWheel() {
       const canvas = document.getElementById('wheelCanvas');
       const ctx = canvas.getContext('2d');
-      const items = data[currentMode];
+      const items = getCurrentItems();
       const w = canvas.width;
       const h = canvas.height;
       const cx = w / 2;
@@ -539,7 +748,7 @@
         ctx.font = `900 ${items.length > 10 ? 26 : 34}px sans-serif`;
         ctx.shadowColor = 'rgba(0,0,0,.3)';
         ctx.shadowBlur = 4;
-        wrapText(ctx, item, r - 42, 0, Math.min(210, r * .48), items.length > 10 ? 30 : 38);
+        wrapText(ctx, getItemName(item), r - 42, 0, Math.min(210, r * .48), items.length > 10 ? 30 : 38);
         ctx.restore();
       });
 
@@ -569,9 +778,9 @@
     }
 
     function spinWheel() {
-      const items = data[currentMode];
+      const items = getCurrentItems();
       if (!items.length) {
-        toast('請先到設定新增選項');
+        toast('目前沒有符合篩選的選項');
         return;
       }
       if (spinning) return;
@@ -596,8 +805,156 @@
       setTimeout(() => {
         spinning = false;
         btn.disabled = false;
-        resultBox.innerHTML = `今天就吃：<br><strong>${escapeHtml(items[targetIndex])}</strong>`;
+        const picked = items[targetIndex];
+        const pickedName = getItemName(picked);
+        const meta = currentMode === 'restaurant' ? `<div style="font-size:14px;color:var(--muted);margin-top:4px;">${escapeHtml(picked.type)}｜${escapeHtml(picked.price)}</div>` : '';
+        resultBox.innerHTML = `今天就吃：<br><strong>${escapeHtml(pickedName)}</strong>${meta}`;
       }, 4300);
+    }
+
+    function csvCategoryLabel(key) {
+      return modeInfo[key] ? modeInfo[key].label : key;
+    }
+
+    function updateCsvHint() {
+      const select = document.getElementById('csvCategory');
+      const hint = document.getElementById('csvHint');
+      if (!select || !hint) return;
+      const key = select.value;
+      if (key === 'restaurant') {
+        hint.innerHTML = '餐廳 CSV 格式：<b>名稱,類型,價位</b><br>類型可填：飲料店、甜點店、咖啡廳、餐廳；價位可填：$、$$、$$$。';
+      } else {
+        hint.innerHTML = `${escapeHtml(csvCategoryLabel(key))} CSV 格式：<b>名稱</b><br>例如每列一個選項，重複名稱會自動略過。`;
+      }
+    }
+
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let cell = '';
+      let inQuotes = false;
+      text = String(text || '').replace(/^\uFEFF/, '');
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (ch === '"') {
+          if (inQuotes && next === '"') {
+            cell += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === ',' && !inQuotes) {
+          row.push(cell.trim());
+          cell = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && next === '\n') i++;
+          row.push(cell.trim());
+          if (row.some(v => v !== '')) rows.push(row);
+          row = [];
+          cell = '';
+        } else {
+          cell += ch;
+        }
+      }
+      row.push(cell.trim());
+      if (row.some(v => v !== '')) rows.push(row);
+      return rows;
+    }
+
+    function toCSVValue(value) {
+      const text = String(value || '');
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+
+    function importCSV() {
+      const key = document.getElementById('csvCategory').value;
+      const fileInput = document.getElementById('csvFile');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        toast('請先選擇 CSV 檔案');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        const rows = parseCSV(e.target.result);
+        if (!rows.length) {
+          toast('CSV 沒有資料');
+          return;
+        }
+
+        const headerWords = ['名稱', 'name', '餐廳', '料理種類', '品項', '類型', 'type', '價位', 'price'];
+        const first = rows[0].map(v => v.replace(/^\uFEFF/, '').trim().toLowerCase());
+        const hasHeader = first.some(v => headerWords.includes(v));
+        const bodyRows = hasHeader ? rows.slice(1) : rows;
+        let added = 0;
+        let skipped = 0;
+
+        if (key === 'restaurant') {
+          bodyRows.forEach(cols => {
+            const name = (cols[0] || '').trim();
+            if (!name) return;
+            const typeRaw = (cols[1] || '餐廳').trim();
+            const priceRaw = (cols[2] || '$$').trim();
+            const type = restaurantTypes.includes(typeRaw) && typeRaw !== '全部' ? typeRaw : '餐廳';
+            const price = priceLevels.includes(priceRaw) && priceRaw !== '全部' ? priceRaw : '$$';
+            if (data.restaurant.some(item => item.name === name)) {
+              skipped++;
+              return;
+            }
+            data.restaurant.push({ name, type, price });
+            added++;
+          });
+        } else {
+          bodyRows.forEach(cols => {
+            const name = (cols[0] || '').trim();
+            if (!name) return;
+            if (data[key].includes(name)) {
+              skipped++;
+              return;
+            }
+            data[key].push(name);
+            added++;
+          });
+        }
+
+        saveData();
+        renderSettings();
+        updateCsvHint();
+        fileInput.value = '';
+        toast(`匯入完成：新增 ${added} 筆，略過 ${skipped} 筆`);
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function exportCSV() {
+      const key = document.getElementById('csvCategory').value;
+      let csv = '\uFEFF';
+      if (key === 'restaurant') {
+        csv += '名稱,類型,價位\n';
+        data.restaurant.forEach(item => {
+          csv += [toCSVValue(item.name), toCSVValue(item.type), toCSVValue(item.price)].join(',') + '\n';
+        });
+      } else {
+        csv += '名稱\n';
+        data[key].forEach(item => {
+          csv += toCSVValue(item) + '\n';
+        });
+      }
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.href = url;
+      a.download = `到底要吃什麼_${csvCategoryLabel(key)}_${date}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('CSV 已匯出');
     }
 
     function renderSettings() {
@@ -605,23 +962,33 @@
       container.innerHTML = Object.keys(modeInfo).map(key => {
         const info = modeInfo[key];
         const items = data[key];
+        const addBlock = key === 'restaurant'
+          ? `<div class="setting-grid">
+              <input id="input-${key}" type="text" placeholder="新增餐廳，例如：巷口牛肉麵" onkeydown="if(event.key==='Enter') addItem('${key}')" />
+              <select id="type-${key}">${restaurantTypes.filter(t => t !== '全部').map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+              <select id="price-${key}">${priceLevels.filter(p => p !== '全部').map(p => `<option value="${p}">${p}</option>`).join('')}</select>
+              <button class="btn small-btn" onclick="addItem('${key}')">新增</button>
+            </div>`
+          : `<div class="input-row">
+              <input id="input-${key}" type="text" placeholder="新增${info.label}，例如：${placeholderFor(key)}" onkeydown="if(event.key==='Enter') addItem('${key}')" />
+              <button class="btn small-btn" onclick="addItem('${key}')">新增</button>
+            </div>`;
+        const listHtml = items.length ? items.map((item, idx) => {
+          const title = key === 'restaurant' ? item.name : item;
+          const meta = key === 'restaurant' ? `<div class="item-meta"><span class="tag">${escapeHtml(item.type)}</span><span class="tag">${escapeHtml(item.price)}</span></div>` : '';
+          return `<div class="item">
+            <span><b>${escapeHtml(title)}</b>${meta}</span>
+            <div class="item-actions">
+              <button class="mini" onclick="editItem('${key}', ${idx})">改</button>
+              <button class="mini delete" onclick="deleteItem('${key}', ${idx})">刪</button>
+            </div>
+          </div>`;
+        }).join('') : '<div class="empty">尚無選項</div>';
         return `
           <div class="panel setting-section">
             <h2>${info.icon} 管理${info.label}</h2>
-            <div class="input-row">
-              <input id="input-${key}" type="text" placeholder="新增${info.label}，例如：${placeholderFor(key)}" onkeydown="if(event.key==='Enter') addItem('${key}')" />
-              <button class="btn small-btn" onclick="addItem('${key}')">新增</button>
-            </div>
-            <div class="item-list">
-              ${items.length ? items.map((item, idx) => `
-                <div class="item">
-                  <span>${escapeHtml(item)}</span>
-                  <div class="item-actions">
-                    <button class="mini" onclick="editItem('${key}', ${idx})">改</button>
-                    <button class="mini delete" onclick="deleteItem('${key}', ${idx})">刪</button>
-                  </div>
-                </div>`).join('') : '<div class="empty">尚無選項</div>'}
-            </div>
+            ${addBlock}
+            <div class="item-list">${listHtml}</div>
           </div>
         `;
       }).join('');
@@ -637,11 +1004,24 @@
       const input = document.getElementById(`input-${key}`);
       const value = input.value.trim();
       if (!value) return;
-      if (data[key].includes(value)) {
-        toast('這個選項已經存在');
-        return;
+
+      if (key === 'restaurant') {
+        if (data.restaurant.some(item => item.name === value)) {
+          toast('這個選項已經存在');
+          return;
+        }
+        data.restaurant.push({
+          name: value,
+          type: document.getElementById(`type-${key}`).value,
+          price: document.getElementById(`price-${key}`).value
+        });
+      } else {
+        if (data[key].includes(value)) {
+          toast('這個選項已經存在');
+          return;
+        }
+        data[key].push(value);
       }
-      data[key].push(value);
       input.value = '';
       saveData();
       renderSettings();
@@ -649,18 +1029,34 @@
     }
 
     function editItem(key, idx) {
-      const next = prompt('修改選項名稱：', data[key][idx]);
-      if (next === null) return;
-      const value = next.trim();
-      if (!value) return;
-      data[key][idx] = value;
+      if (key === 'restaurant') {
+        const item = data.restaurant[idx];
+        const nextName = prompt('修改店名：', item.name);
+        if (nextName === null) return;
+        const name = nextName.trim();
+        if (!name) return;
+        const nextType = prompt('修改類型：飲料店 / 甜點店 / 咖啡廳 / 餐廳', item.type);
+        if (nextType === null) return;
+        const type = restaurantTypes.includes(nextType.trim()) && nextType.trim() !== '全部' ? nextType.trim() : item.type;
+        const nextPrice = prompt('修改價位：$ / $$ / $$$', item.price);
+        if (nextPrice === null) return;
+        const price = priceLevels.includes(nextPrice.trim()) && nextPrice.trim() !== '全部' ? nextPrice.trim() : item.price;
+        data.restaurant[idx] = { name, type, price };
+      } else {
+        const next = prompt('修改選項名稱：', data[key][idx]);
+        if (next === null) return;
+        const value = next.trim();
+        if (!value) return;
+        data[key][idx] = value;
+      }
       saveData();
       renderSettings();
       toast('已修改');
     }
 
     function deleteItem(key, idx) {
-      if (!confirm(`確定刪除「${data[key][idx]}」嗎？`)) return;
+      const itemName = key === 'restaurant' ? data.restaurant[idx].name : data[key][idx];
+      if (!confirm(`確定刪除「${itemName}」嗎？`)) return;
       data[key].splice(idx, 1);
       saveData();
       renderSettings();
